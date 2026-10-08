@@ -44,7 +44,11 @@
 
   function highlight(sentence, term) {
     const safe = esc(sentence);
-    const re = new RegExp("\\b(" + esc(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[a-z]*)", "i");
+    // Same matching as core cloze: each word of the term may carry an inflection ("results from").
+    const pattern = esc(term).split(/\s+/).map(function (part) {
+      return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[a-z]*";
+    }).join("\\s+");
+    const re = new RegExp("\\b(" + pattern + ")", "i");
     return safe.replace(re, "<mark>$1</mark>");
   }
 
@@ -219,8 +223,14 @@
       "</a>";
     }).join("");
 
-    const exam = subjects.filter(function (s) { return s.featured; })[0];
-    const examP = exam ? progressFor(index.bySubject[exam.id]) : null;
+    const callouts = subjects.filter(function (s) { return s.featured; }).map(function (s, i) {
+      const p = progressFor(index.bySubject[s.id]);
+      return '<a class="callout" href="#/s/' + s.id + '">' +
+        '<span class="callout-label">' + (i === 0 ? "先从这里开始 Start here" : "全科通用 Every course") + "</span>" +
+        '<span class="callout-body"><b>' + esc(s.zh) + " · " + esc(s.name) + "</b>" +
+        "<span>" + esc(s.blurb || "") + "</span></span>" +
+        '<span class="callout-meta">' + p.mastered + " / " + p.total + " ›</span></a>";
+    }).join("");
 
     render(
       '<section class="band hero">' +
@@ -238,13 +248,7 @@
         '<div class="stat"><b>' + all.learning + '</b><span>学习中 Learning</span></div>' +
         '<div class="stat"><b>' + streak + '</b><span>连续天数 Day streak</span></div>' +
       "</section>" +
-      (exam
-        ? '<a class="callout" href="#/s/' + exam.id + '">' +
-            '<span class="callout-label">先从这里开始 Start here</span>' +
-            '<span class="callout-body"><b>' + esc(exam.zh) + " · " + esc(exam.name) + "</b>" +
-            "<span>identify, explain, justify, negligible, respectively… 看懂题目要求，是拿分的第一步。</span></span>" +
-            '<span class="callout-meta">' + examP.mastered + " / " + examP.total + " ›</span></a>"
-        : "") +
+      '<div class="callouts">' + callouts + "</div>" +
       '<div class="section-head"><p class="eyebrow dark">Courses</p><h2>选择科目 Choose a course</h2>' +
         '<p class="muted">' + subjects.length + " 门课程 · " + index.words.length + " 个术语 terms</p></div>" +
       '<div class="course-grid">' + courseCards + "</div>" +

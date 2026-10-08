@@ -292,7 +292,9 @@
 
   /** Example sentence with the term blanked out, or null if the term is not found. */
   function cloze(word) {
-    const re = new RegExp("\\b" + escapeRegExp(word.t) + "[a-z]*", "i");
+    // Allow simple inflection on each word of a phrase: "result from" matches "results from".
+    const pattern = word.t.split(/\s+/).map(function (part) { return escapeRegExp(part) + "[a-z]*"; }).join("\\s+");
+    const re = new RegExp("\\b" + pattern, "i");
     if (!re.test(word.ex)) return null;
     return word.ex.replace(re, "_____");
   }

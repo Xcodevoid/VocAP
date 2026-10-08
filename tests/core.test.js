@@ -174,6 +174,8 @@ test("cloze blanks the term including simple inflections", () => {
   assert.strictEqual(core.cloze({ t: "denature", ex: "High temperatures denature enzymes." }), "High temperatures _____ enzymes.");
   assert.strictEqual(core.cloze({ t: "converge", ex: "The series converges because |r| < 1." }), "The series _____ because |r| < 1.");
   assert.strictEqual(core.cloze({ t: "mitochondrion", ex: "Cells contain many mitochondria." }), null);
+  assert.strictEqual(core.cloze({ t: "result from", ex: "Anemia results from a mutation." }), "Anemia _____ a mutation.");
+  assert.strictEqual(core.cloze({ t: "increase by", ex: "The price increased by $5." }), "The price _____ $5.");
 });
 
 test("spelling check ignores case and extra spaces", () => {
