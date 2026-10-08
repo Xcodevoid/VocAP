@@ -3,7 +3,7 @@
   id: "calc",
   name: "AP Calculus",
   zh: "AP 微积分",
-  icon: "∫",
+  icon: "CALC",
   color: "#8a4fd8",
   units: {
     lim: "Limits 极限",

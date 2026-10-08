@@ -3,7 +3,7 @@
   id: "ush",
   name: "AP U.S. History",
   zh: "AP 美国历史",
-  icon: "🗽",
+  icon: "USH",
   color: "#b23a48",
   units: {
     col: "Colonial Era 殖民时期",
@@ -82,7 +82,7 @@
   id: "wh",
   name: "AP World History",
   zh: "AP 世界历史",
-  icon: "🌍",
+  icon: "WH",
   color: "#a0702a",
   units: {
     early: "1200–1450 早期",

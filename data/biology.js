@@ -3,7 +3,7 @@
   id: "bio",
   name: "AP Biology",
   zh: "AP 生物",
-  icon: "🧬",
+  icon: "BIO",
   color: "#2e9e5b",
   units: {
     cell: "Cells 细胞",

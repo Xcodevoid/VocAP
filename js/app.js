@@ -76,25 +76,54 @@
     window.speechSynthesis.speak(u);
   }
 
+  // Inline SVG icons (stroke = currentColor) so the UI needs no icon font or emoji.
+  function svg(paths, fill) {
+    return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="' + (fill ? "currentColor" : "none") +
+      '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + "</svg>";
+  }
+  const STAR = '<path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z"/>';
+  const ICON = {
+    speaker: svg('<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>'),
+    star: svg(STAR),
+    starFill: svg(STAR, true),
+    close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    back: svg('<path d="M15 6l-6 6 6 6"/>'),
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+    cross: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    shuffle: svg('<path d="M16 4h4v4M4 20L20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/>'),
+    alert: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16.5v.01"/>'),
+    slash: svg('<path d="M5 19L19 5M14 5h5v5"/>')
+  };
+
+  function courseBadge(s, cls) {
+    return '<span class="course-badge' + (cls ? " " + cls : "") + '" style="--c:' + s.color + '">' + esc(s.icon) + "</span>";
+  }
+
+  function tipHtml(w) {
+    return w.tip ? '<p class="tip"><span class="tip-label">提示 Tip</span>' + esc(w.tip) + "</p>" : "";
+  }
+
   function speakBtn(term) {
     if (!canSpeak) return "";
-    return '<button class="icon-btn" data-speak="' + esc(term) + '" title="朗读 Pronounce" aria-label="Pronounce ' + esc(term) + '">🔊</button>';
+    return '<button class="icon-btn" data-speak="' + esc(term) + '" title="朗读 Pronounce" aria-label="Pronounce ' + esc(term) + '">' + ICON.speaker + "</button>";
   }
 
   function starBtn(id) {
     const on = !!state.starred[id];
-    return '<button class="icon-btn star' + (on ? " on" : "") + '" data-star="' + esc(id) + '" title="加入生词本 Star" aria-pressed="' + on + '" aria-label="Star">' + (on ? "★" : "☆") + "</button>";
+    return '<button class="icon-btn star' + (on ? " on" : "") + '" data-star="' + esc(id) + '" title="加入生词本 Star" aria-pressed="' + on + '" aria-label="Star">' + (on ? ICON.starFill : ICON.star) + "</button>";
   }
 
   function statusBadge(id) {
     const st = C.status(state, id);
+    if (st === "new") return ""; // most words are new; only show progress once there is some
     const label = { new: "新词 New", learning: "学习中 Learning", mastered: "已掌握 Mastered" }[st];
     return '<span class="badge badge-' + st + '">' + label + "</span>";
   }
 
   function subjectTag(w) {
     const s = subjectById[w.subject];
-    return '<a class="subject-tag" href="#/s/' + s.id + '" style="--c:' + s.color + '">' + esc(s.icon) + " " + esc(s.name) + "</a>";
+    return '<a class="subject-tag" href="#/s/' + s.id + '" style="--c:' + s.color + '">' + esc(s.name) + "</a>";
   }
 
   function rootChips(w) {
@@ -113,13 +142,13 @@
         '<span class="pos">' + esc(w.p) + "</span>" +
         speakBtn(w.t) +
         '<span class="spacer"></span>' +
-        (state.mistakes[w.id] ? '<span class="badge badge-wrong" title="答错次数 Times missed">✗' + state.mistakes[w.id] + "</span>" : "") +
+        (state.mistakes[w.id] ? '<span class="badge badge-wrong" title="答错次数 Times missed">错 ×' + state.mistakes[w.id] + "</span>" : "") +
         statusBadge(w.id) + starBtn(w.id) +
       "</div>" +
       '<p class="zh' + (hide ? " concealed" : "") + '"' + (hide ? ' tabindex="0" role="button" title="点击显示中文"' : "") + ">" + esc(w.zh) + "</p>" +
       '<p class="def">' + esc(w.d) + "</p>" +
       '<p class="ex">“' + highlight(w.ex, w.t) + "”</p>" +
-      (w.tip ? '<p class="tip">💡 ' + esc(w.tip) + "</p>" : "") +
+      tipHtml(w) +
       rootChips(w) +
       (opts.showSubject ? '<div class="card-foot">' + subjectTag(w) + "</div>" : "") +
     "</article>";
@@ -152,7 +181,7 @@
     const m = /^s:([^:]+)(?::(.+))?$/.exec(spec || "");
     if (m && subjectById[m[1]]) {
       const s = subjectById[m[1]];
-      return s.icon + " " + s.name + (m[2] && s.units[m[2]] ? " · " + s.units[m[2]] : "");
+      return s.name + (m[2] && s.units[m[2]] ? " · " + s.units[m[2]] : "");
     }
     return spec;
   }
@@ -175,54 +204,56 @@
     const t = now();
     const due = C.resolvePool(index, state, "due", t).length;
     const all = progressFor(index.words);
-    const streak = C.currentStreak(state, t);
-    const featured = subjects.filter(function (s) { return s.featured; });
+    const streak = Math.max(C.currentStreak(state, t), C.checkinStreak(state, t));
+    const checkedIn = !!state.checkins[C.dayKey(t)];
 
-    const subjectCards = subjects.filter(function (s) { return !s.featured; }).map(function (s) {
+    const courseCards = subjects.filter(function (s) { return !s.featured; }).map(function (s) {
       const p = progressFor(index.bySubject[s.id]);
-      return '<a class="subject-card" href="#/s/' + s.id + '" style="--c:' + s.color + '">' +
-        '<span class="subject-icon">' + esc(s.icon) + "</span>" +
-        '<span class="subject-name">' + esc(s.name) + "</span>" +
-        '<span class="subject-zh">' + esc(s.zh) + "</span>" +
+      return '<a class="course-card" href="#/s/' + s.id + '" style="--c:' + s.color + '">' +
+        '<div class="course-top">' + courseBadge(s) +
+          '<span class="course-count">' + p.total + " terms</span></div>" +
+        '<span class="course-name">' + esc(s.name) + "</span>" +
+        '<span class="course-zh">' + esc(s.zh) + "</span>" +
         progressBar(p) +
-        '<span class="subject-count">' + p.mastered + " / " + p.total + " 已掌握</span>" +
+        '<span class="course-foot"><span>已掌握 ' + p.mastered + " / " + p.total + '</span><span class="more">Explore ›</span></span>' +
       "</a>";
     }).join("");
 
-    const featuredHtml = featured.map(function (s) {
-      const p = progressFor(index.bySubject[s.id]);
-      return '<a class="featured" href="#/s/' + s.id + '" style="--c:' + s.color + '">' +
-        '<span class="subject-icon">' + esc(s.icon) + "</span>" +
-        '<span><b>先从这里开始 Start here：' + esc(s.zh) + "</b><br>" +
-        '<span class="muted">identify, explain, justify, negligible, respectively… 看懂题目要求，是拿分的第一步。' +
-        " (" + p.mastered + "/" + p.total + ")</span></span></a>";
-    }).join("");
+    const exam = subjects.filter(function (s) { return s.featured; })[0];
+    const examP = exam ? progressFor(index.bySubject[exam.id]) : null;
 
     render(
-      '<section class="hero">' +
-        '<h1>你已经懂了知识，<br>现在把它<span class="accent">翻译成 AP 的语言</span>。</h1>' +
-        '<p class="lead">You already understand the science and math. VocAP bridges the words you know in 中文 to the English you need on the AP exam — across every subject.</p>' +
-        '<div class="stats">' +
-          '<div class="stat"><b>' + due + '</b><span>今日待复习<br>Due today</span></div>' +
-          '<div class="stat"><b>' + all.mastered + '</b><span>已掌握<br>Mastered</span></div>' +
-          '<div class="stat"><b>' + all.learning + '</b><span>学习中<br>Learning</span></div>' +
-          '<div class="stat"><b>' + streak + '🔥</b><span>连续天数<br>Day streak</span></div>' +
-        "</div>" +
+      '<section class="band hero">' +
+        '<p class="eyebrow">AP 学术词汇 · Academic Vocabulary for AP</p>' +
+        '<h1>你已经懂了知识，<br>现在把它翻译成 <span class="hl">AP 的语言</span>。</h1>' +
+        '<p class="lead">You already understand the science and math. VocAP bridges the words you know in 中文 to the English you need on the AP exam — across every course.</p>' +
         '<div class="actions">' +
-          '<a class="btn primary" href="#/zhan">⚔️ 每日斩词 Daily words' + (state.checkins[C.dayKey(t)] ? " ✓" : "") + "</a>" +
-          (due ? '<a class="btn" href="#/study?pool=due">复习 ' + due + ' 个到期单词 Review due</a>' : '<a class="btn" href="#/study">闪卡 Flashcards</a>') +
-          '<a class="btn" href="#/quiz">小测一下 Take a quiz</a>' +
+          '<a class="btn btn-yellow" href="#/zhan">' + (checkedIn ? ICON.check + " 今日已打卡 · 继续练习" : "开始每日斩词 Start Daily Words") + "</a>" +
+          (due ? '<a class="btn btn-ghost-light" href="#/study?pool=due">复习 ' + due + " 个到期单词 Review due</a>" : '<a class="btn btn-ghost-light" href="#/quiz">小测一下 Take a quiz</a>') +
         "</div>" +
       "</section>" +
-      featuredHtml +
-      '<h2 class="section-title">选择科目 Choose a subject <span class="muted">· ' + index.words.length + " words</span></h2>" +
-      '<div class="subject-grid">' + subjectCards + "</div>" +
+      '<section class="stat-strip">' +
+        '<div class="stat"><b>' + due + '</b><span>今日待复习 Due today</span></div>' +
+        '<div class="stat"><b>' + all.mastered + '</b><span>已掌握 Mastered</span></div>' +
+        '<div class="stat"><b>' + all.learning + '</b><span>学习中 Learning</span></div>' +
+        '<div class="stat"><b>' + streak + '</b><span>连续天数 Day streak</span></div>' +
+      "</section>" +
+      (exam
+        ? '<a class="callout" href="#/s/' + exam.id + '">' +
+            '<span class="callout-label">先从这里开始 Start here</span>' +
+            '<span class="callout-body"><b>' + esc(exam.zh) + " · " + esc(exam.name) + "</b>" +
+            "<span>identify, explain, justify, negligible, respectively… 看懂题目要求，是拿分的第一步。</span></span>" +
+            '<span class="callout-meta">' + examP.mastered + " / " + examP.total + " ›</span></a>"
+        : "") +
+      '<div class="section-head"><p class="eyebrow dark">Courses</p><h2>选择科目 Choose a course</h2>' +
+        '<p class="muted">' + subjects.length + " 门课程 · " + index.words.length + " 个术语 terms</p></div>" +
+      '<div class="course-grid">' + courseCards + "</div>" +
       '<section class="how">' +
-        '<h2 class="section-title">怎么学 How it works</h2>' +
+        '<div class="section-head"><p class="eyebrow dark">How it works</p><h2>怎么学</h2></div>' +
         '<div class="how-grid">' +
-          '<div><b>① 搭桥 Bridge</b><p>用中文搜索你熟悉的概念（如「导数」「有丝分裂」），立刻找到 AP 用的英文术语和例句。</p></div>' +
-          '<div><b>② 拆解 Decode</b><p>学习希腊/拉丁词根：photo-（光）+ synthesis（合成）。遇到生词也能猜出意思。</p></div>' +
-          '<div><b>③ 记牢 Remember</b><p>每日斩词：先复习、再学新词，认识的直接「斩」掉；答错的词自动进入错题本，直到你答对为止。</p></div>' +
+          '<div><span class="step">01</span><b>搭桥 Bridge</b><p>用中文搜索你熟悉的概念（如「导数」「有丝分裂」），立刻找到 AP 用的英文术语和例句。</p></div>' +
+          '<div><span class="step">02</span><b>拆解 Decode</b><p>学习希腊/拉丁词根：photo-（光）+ synthesis（合成）。遇到生词也能猜出意思。</p></div>' +
+          '<div><span class="step">03</span><b>记牢 Remember</b><p>每日斩词：先复习、再学新词，认识的直接「斩」掉；答错的词自动进入错题本，直到你答对为止。</p></div>' +
         "</div>" +
       "</section>",
       "home"
@@ -258,7 +289,7 @@
 
     render(
       '<section class="subject-hero" style="--c:' + s.color + '">' +
-        '<span class="subject-icon big">' + esc(s.icon) + "</span>" +
+        courseBadge(s, "big") +
         '<div><h1>' + esc(s.name) + '</h1><p class="muted">' + esc(s.zh) + " · " + p.mastered + "/" + p.total + " 已掌握 mastered</p>" + progressBar(p) + "</div>" +
         '<div class="actions">' +
           '<a class="btn primary" href="#/study?pool=' + encodeURIComponent(pool) + '">闪卡 Study</a>' +
@@ -303,10 +334,10 @@
   function poolPicker(route, title, subtitle) {
     const t = now();
     const specials = [
-      ["due", "⏰", "今日复习", "Due today"],
-      ["all", "🎲", "全部混合", "All subjects"],
-      ["starred", "★", "生词本", "Starred"],
-      ["mistakes", "✗", "错题本", "Mistakes"]
+      ["due", ICON.clock, "今日复习", "Due today"],
+      ["all", ICON.shuffle, "全部混合", "All courses"],
+      ["starred", ICON.starFill, "生词本", "Starred"],
+      ["mistakes", ICON.alert, "错题本", "Mistakes"]
     ].map(function (x) {
       const n = C.resolvePool(index, state, x[0], t).length;
       return '<a class="pool' + (n ? "" : " disabled") + '" href="#/' + route + "?pool=" + x[0] + '"' + (n ? "" : ' aria-disabled="true"') + ">" +
@@ -316,7 +347,7 @@
       const ws = index.bySubject[s.id];
       const dueN = ws.filter(function (w) { return C.isDue(state, w.id, t); }).length;
       return '<a class="pool" href="#/' + route + "?pool=s:" + s.id + '" style="--c:' + s.color + '">' +
-        '<span class="pool-icon">' + esc(s.icon) + "</span><b>" + esc(s.name) + "</b><span>" + esc(s.zh) + " · " + ws.length + (dueN ? " · " + dueN + " due" : "") + "</span></a>";
+        courseBadge(s) + "<b>" + esc(s.name) + "</b><span>" + esc(s.zh) + " · " + ws.length + (dueN ? " · " + dueN + " due" : "") + "</span></a>";
     }).join("");
     render(
       '<h1 class="page-title">' + title + "</h1><p class=\"muted\">" + subtitle + "</p>" +
@@ -349,7 +380,7 @@
         .map(function (w) { return state.cards[w.id].due; }).sort(function (a, b) { return a - b; })[0];
       render(
         '<section class="done">' +
-          "<h1>🎉 完成！Session complete</h1>" +
+          "<h1>完成！Session complete</h1>" +
           "<p>" + esc(poolLabel(s.spec)) + "</p>" +
           (s.total ? "<p>本轮学习了 <b>" + s.done + "</b> 张卡片，其中 <b>" + s.again + "</b> 次选了「再来」。</p>"
             : "<p>这一组目前没有需要学习的卡片。Nothing to study here right now.</p>") +
@@ -371,13 +402,13 @@
       (prefs.reverse ? '<p class="card-term">' + esc(w.t) + ' <span class="pos">' + esc(w.p) + "</span> " + speakBtn(w.t) + "</p>" : '<p class="card-zh">' + esc(w.zh) + "</p>") +
       '<p class="def">' + esc(w.d) + "</p>" +
       '<p class="ex">“' + highlight(w.ex, w.t) + "”</p>" +
-      (w.tip ? '<p class="tip">💡 ' + esc(w.tip) + "</p>" : "") +
+      tipHtml(w) +
       rootChips(w);
     const pct = s.total ? Math.round(100 * s.done / (s.done + s.queue.length)) : 0;
 
     render(
       '<div class="study-top">' +
-        '<a class="muted" href="#/study">← ' + esc(poolLabel(s.spec)) + "</a>" +
+        '<a class="back" href="#/study">' + ICON.back + esc(poolLabel(s.spec)) + "</a>" +
         '<label class="toggle"><input type="checkbox" id="reverse"' + (prefs.reverse ? " checked" : "") + "> 中→英 Chinese first</label>" +
         '<span class="muted">剩余 ' + s.queue.length + " left</span>" +
       "</div>" +
@@ -428,7 +459,7 @@
   let quiz = null;
 
   const MODE_LABELS = {
-    mixed: ["🎲 混合", "Mixed"],
+    mixed: ["混合", "Mixed"],
     en2zh: ["英 → 中", "English → 中文"],
     zh2en: ["中 → 英", "中文 → English"],
     def2en: ["看释义选词", "Definition → word"],
@@ -443,7 +474,7 @@
     const pool = C.resolvePool(index, state, spec, now());
     if (!mode) {
       render(
-        '<a class="muted" href="#/quiz">← 选择词组 Choose words</a>' +
+        '<a class="back" href="#/quiz">' + ICON.back + '选择词组 Choose words</a>' +
         '<h1 class="page-title">' + esc(poolLabel(spec)) + "</h1>" +
         '<p class="muted">' + pool.length + " 个单词 words · 选择题型 Choose a question type</p>" +
         '<div class="pool-grid">' + Object.keys(MODE_LABELS).map(function (m) {
@@ -491,13 +522,13 @@
     }
     const feedback = a
       ? '<div class="feedback ' + (a.correct ? "ok" : "bad") + '">' +
-          (a.correct ? "✓ 正确 Correct!" : "✗ 正确答案 Answer: <b>" + esc(q.word.t) + "</b> — " + esc(q.word.zh)) +
+          (a.correct ? ICON.check + " 正确 Correct!" : ICON.cross + " 正确答案 Answer: <b>" + esc(q.word.t) + "</b> — " + esc(q.word.zh)) +
           '<div class="feedback-word">' + wordCard(q.word, { showZh: true }) + "</div>" +
           '<button class="btn primary wide" id="next-q">' + (quiz.i + 1 < quiz.qs.length ? "下一题 Next →" : "查看结果 See results") + "</button>" +
         "</div>"
       : "";
     render(
-      '<div class="study-top"><a class="muted" href="#/quiz?pool=' + encodeURIComponent(quiz.spec) + '">← ' + esc(poolLabel(quiz.spec)) + "</a>" +
+      '<div class="study-top"><a class="back" href="#/quiz?pool=' + encodeURIComponent(quiz.spec) + '">' + ICON.back + esc(poolLabel(quiz.spec)) + "</a>" +
         '<span class="muted">' + (quiz.i + 1) + " / " + quiz.qs.length + " · 得分 " + quiz.score + "</span></div>" +
       '<div class="progress thin"><span class="p-mastered" style="width:' + (100 * quiz.i / quiz.qs.length) + '%"></span></div>' +
       '<section class="question">' +
@@ -592,26 +623,26 @@
     const p = progressFor(C.resolvePool(index, state, state.plan.pool, t));
     render(
       '<section class="zhan-dash">' +
-        '<div class="zhan-head"><div><h1 class="page-title">⚔️ 每日斩词 Daily Words</h1>' +
+        '<div class="zhan-head"><div><p class="eyebrow dark">Daily Words</p><h1 class="page-title">每日斩词</h1>' +
           '<p class="muted">词书 ' + esc(planPoolLabel()) + " · 每天 " + state.plan.daily + ' 个新词 · <a href="#/zhan?setup=1">更换计划 Change plan</a></p></div></div>' +
         '<div class="today-box">' +
           '<div class="today-num"><b>' + (total - left) + "</b> / " + total + '<span>今日任务 Today</span></div>' +
           '<div class="progress"><span class="p-mastered" style="width:' + (total ? 100 * (total - left) / total : 0) + '%"></span></div>' +
           (doneToday
-            ? '<p class="checked">✅ 今日已打卡 Checked in today!</p><div class="actions"><button class="btn primary" id="zhan-more">加餐：再学 10 个 Learn 10 more</button><a class="btn" href="#/quiz?pool=mistakes">错词本测验 Quiz mistakes</a></div>'
+            ? '<p class="checked">' + ICON.check + ' 今日已打卡 Checked in today!</p><div class="actions"><button class="btn primary" id="zhan-more">加餐：再学 10 个 Learn 10 more</button><a class="btn" href="#/quiz?pool=mistakes">错词本测验 Quiz mistakes</a></div>'
             : total
               ? '<div class="actions"><a class="btn primary big" href="#/zhan?go=1">' + (left < total ? "继续斩词 Continue" : "开始斩词 Start") + " · 剩 " + left + "</a></div>"
               : '<p class="muted">这本词书已经全部学完或斩掉了！换一本吧。All words in this book are learned — choose another.</p>') +
         "</div>" +
         '<div class="stats">' +
-          '<div class="stat"><b>' + C.checkinStreak(state, t) + '🔥</b><span>连续打卡<br>Check-in streak</span></div>' +
+          '<div class="stat"><b>' + C.checkinStreak(state, t) + '</b><span>连续打卡<br>Check-in streak</span></div>' +
           '<div class="stat"><b>' + Object.keys(state.slain).length + '</b><span>已斩<br>Slain</span></div>' +
           '<div class="stat"><b>' + Object.keys(state.mistakes).length + '</b><span>错词本<br>Mistakes</span></div>' +
           '<div class="stat"><b>' + p.mastered + "/" + p.total + '</b><span>本书掌握<br>Book mastered</span></div>' +
         "</div>" +
         '<h2 class="section-title">打卡日历 Check-in calendar</h2>' + calendar(t) +
         '<p class="muted small">玩法：看英文单词选中文意思。认识的词点「斩」，以后不再出现；答错的词进入错词本，本轮稍后会用「中→英」再考一次，直到答对。<br>' +
-        "How it works: pick the Chinese meaning. Already know a word? Slay it ⚔️ and it never comes back. Miss one and it goes to your mistake notebook and returns later this session until you get it right.</p>" +
+        "How it works: pick the Chinese meaning. Already know a word? Slay it (斩) and it never comes back. Miss one and it goes to your mistake notebook and returns later this session until you get it right.</p>" +
       "</section>",
       "zhan"
     );
@@ -631,7 +662,7 @@
   function viewZhanSetup() {
     const t = now();
     const current = state.plan.pool || "all";
-    const books = [{ spec: "all", icon: "🎲", name: "全部科目", sub: "All subjects" }].concat(subjects.map(function (s) {
+    const books = [{ spec: "all", icon: "ALL", name: "全部科目", sub: "All courses", color: "#1e1e1e" }].concat(subjects.map(function (s) {
       return { spec: "s:" + s.id, icon: s.icon, name: s.zh, sub: s.name, color: s.color };
     }));
     render(
@@ -643,7 +674,7 @@
           const fresh = ws.filter(function (w) { return !state.cards[w.id] && !state.slain[w.id]; }).length;
           return '<label class="pool pick" style="--c:' + (b.color || "var(--accent)") + '">' +
             '<input type="radio" name="book" value="' + b.spec + '"' + (b.spec === current ? " checked" : "") + ">" +
-            '<span class="pool-icon">' + esc(b.icon) + "</span><b>" + esc(b.name) + "</b><span>" + esc(b.sub) + " · " + fresh + " 新词</span></label>";
+            courseBadge(b) + "<b>" + esc(b.name) + "</b><span>" + esc(b.sub) + " · " + fresh + " 新词</span></label>";
         }).join("") + "</div>" +
         '<h2 class="section-title">每天学几个新词？New words per day</h2>' +
         '<div class="chips">' + DAILY_OPTIONS.map(function (n) {
@@ -690,12 +721,12 @@
     const total = state.today.ids.length;
     const done = total - C.remainingToday(state).length;
     const undo = zhan.undo
-      ? '<div class="toast">⚔️ 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "";
+      ? '<div class="toast"><span class="zhan-mark">斩</span> 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "";
     const prompt = q.mode === "en2zh"
       ? '<p class="card-term">' + esc(w.t) + ' <span class="pos">' + esc(w.p) + "</span></p>" + speakBtn(w.t)
       : '<p class="muted small">再考一次：选出英文 Try again — pick the English</p><p class="card-zh">' + esc(w.zh) + "</p>";
     const hint = q.mode === "en2zh"
-      ? (zhan.hint || a ? '<p class="ex">“' + highlight(w.ex, w.t) + "”</p>" : '<button class="btn small ghost" id="zhan-hint">💡 看例句提示 Show example (H)</button>')
+      ? (zhan.hint || a ? '<p class="ex">“' + highlight(w.ex, w.t) + "”</p>" : '<button class="btn small ghost" id="zhan-hint">看例句提示 Show example (H)</button>')
       : "";
     const options = '<div class="options">' + q.options.map(function (o, i) {
       let cls = "option";
@@ -707,19 +738,19 @@
     }).join("") + "</div>";
     const feedback = a
       ? '<div class="feedback ' + (a.correct ? "ok" : "bad") + '">' +
-          (a.correct ? "✓ 正确 Correct!" : "✗ 答错了，已加入错词本，稍后再考一次。Added to your mistakes — it will come back.") +
+          (a.correct ? ICON.check + " 正确 Correct!" : ICON.cross + " 答错了，已加入错词本，稍后再考一次。Added to your mistakes — it will come back.") +
           '<div class="feedback-word">' + wordCard(w, { showZh: true }) + "</div>" +
           '<button class="btn primary wide" id="zhan-next">下一个 Next →</button></div>'
       : "";
     render(
-      '<div class="study-top"><a class="muted" href="#/zhan">← 每日斩词</a>' +
+      '<div class="study-top"><a class="back" href="#/zhan">' + ICON.back + '每日斩词</a>' +
         '<label class="toggle"><input type="checkbox" id="auto-speak"' + (prefs.autoSpeak ? " checked" : "") + "> 自动发音 Auto-speak</label>" +
         '<span class="muted">' + done + " / " + total + "</span></div>" +
       '<div class="progress thin"><span class="p-mastered" style="width:' + (total ? 100 * done / total : 0) + '%"></span></div>' +
       undo +
       '<section class="question zhan">' +
         '<div class="zhan-card">' +
-          (a ? "" : '<button class="slay" id="zhan-slay" title="我认识，以后不再出现 I know this — never show again">⚔️ 斩<small>S</small></button>') +
+          (a ? "" : '<button class="slay" id="zhan-slay" title="我认识，以后不再出现 I know this — never show again">斩 Slay<small>S</small></button>') +
           prompt + hint +
         "</div>" +
         options + feedback +
@@ -785,8 +816,8 @@
     const finished = !!state.checkins[C.dayKey(t)];
     render(
       '<section class="done">' +
-        (zhan.undo ? '<div class="toast">⚔️ 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "") +
-        (finished ? "<h1>🎉 今日打卡成功！</h1><p>Checked in · 连续 <b>" + C.checkinStreak(state, t) + "</b> 天 day streak 🔥</p>"
+        (zhan.undo ? '<div class="toast"><span class="zhan-mark">斩</span> 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "") +
+        (finished ? "<h1>今日打卡成功！</h1><p>Checked in · 连续 <b>" + C.checkinStreak(state, t) + "</b> 天 day streak</p>"
           : "<h1>本轮完成 Round complete</h1>") +
         '<p class="muted">答对 ' + zhan.right + " · 答错 " + zhan.wrong + " · 斩 " + zhan.slain + "</p>" +
         calendar(t) +
@@ -851,14 +882,14 @@
     };
     render(
       '<h1 class="page-title">我的生词本 My Notebook</h1>' +
-      section("★ 收藏 Starred", starred, "starred", "点击单词旁的 ☆ 收藏难词。Tap ☆ next to any word to save it here.") +
-      section("✗ 错题本 Mistakes", mistakes, "mistakes", "斩词、测验答错或闪卡选「再来」的词会出现在这里，答对后自动移除。Words you miss appear here and leave once you get them right.") +
-      '<section class="nb-section"><h2 class="section-title">⚔️ 已斩 Slain <span class="muted">' + slain.length + "</span></h2>" +
-        (slain.length ? '<p class="muted small">这些词不会再出现在复习中。点 ↩ 恢复。These words are skipped in reviews — tap ↩ to bring one back.</p><div class="chips">' +
+      section("收藏 Starred", starred, "starred", "点击单词旁的星标收藏难词。Tap the star next to any word to save it here.") +
+      section("错题本 Mistakes", mistakes, "mistakes", "斩词、测验答错或闪卡选「再来」的词会出现在这里，答对后自动移除。Words you miss appear here and leave once you get them right.") +
+      '<section class="nb-section"><h2 class="section-title">已斩 Slain <span class="muted">' + slain.length + "</span></h2>" +
+        (slain.length ? '<p class="muted small">这些词不会再出现在复习中。点「恢复」可重新加入复习。These words are skipped in reviews — tap Restore to bring one back.</p><div class="chips">' +
           slain.map(function (w) {
-            return '<span class="chip slain-chip"><button class="link-btn" data-open="' + esc(w.id) + '">' + esc(w.t) + '</button> <button class="link-btn" data-unslay="' + esc(w.id) + '" title="恢复 Restore">↩</button></span>';
+            return '<span class="chip slain-chip"><button class="link-btn" data-open="' + esc(w.id) + '">' + esc(w.t) + '</button> <button class="link-btn" data-unslay="' + esc(w.id) + '" title="恢复 Restore">恢复</button></span>';
           }).join("") + "</div>"
-          : '<p class="empty">在「每日斩词」里点 ⚔️ 斩 掉已经认识的词。Slay words you already know in Daily Words.</p>') +
+          : '<p class="empty">在「每日斩词」里点「斩」掉已经认识的词。Slay words you already know in Daily Words.</p>') +
       "</section>" +
       '<section class="nb-section backup"><h2 class="section-title">备份进度 Backup</h2>' +
         '<p class="muted">进度只保存在当前浏览器。换设备前请先导出。Progress is stored only in this browser — export it before switching devices.</p>' +
@@ -907,7 +938,7 @@
     if (!w) return;
     const c = state.cards[id];
     dialogBody.innerHTML =
-      '<button class="icon-btn close" data-close aria-label="Close">✕</button>' +
+      '<button class="icon-btn close" data-close aria-label="Close">' + ICON.close + "</button>" +
       wordCard(w, { showSubject: true, showZh: true }) +
       (c ? '<p class="muted small">复习 ' + c.seen + " 次 · 记得 " + c.right + " · 忘记 " + c.wrong + " · 下次 " + new Date(c.due).toLocaleDateString() + "</p>" : "");
     if (typeof dialog.showModal === "function") dialog.showModal();
@@ -935,7 +966,7 @@
       document.querySelectorAll('[data-star="' + CSS.escape(id) + '"]').forEach(function (b) {
         const on = !!state.starred[id];
         b.classList.toggle("on", on);
-        b.textContent = on ? "★" : "☆";
+        b.innerHTML = on ? ICON.starFill : ICON.star;
         b.setAttribute("aria-pressed", on);
       });
       return;

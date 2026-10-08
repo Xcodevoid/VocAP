@@ -3,7 +3,7 @@
   id: "stat",
   name: "AP Statistics",
   zh: "AP 统计",
-  icon: "📊",
+  icon: "STAT",
   color: "#0f8b8d",
   units: {
     desc: "Describing Data 描述数据",

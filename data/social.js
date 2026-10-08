@@ -3,7 +3,7 @@
   id: "gov",
   name: "AP U.S. Government",
   zh: "AP 美国政府与政治",
-  icon: "🏛️",
+  icon: "GOV",
   color: "#3d5a80",
   units: {
     found: "Foundations 宪政基础",
@@ -68,7 +68,7 @@
   id: "econ",
   name: "AP Economics",
   zh: "AP 经济学（宏观/微观）",
-  icon: "💹",
+  icon: "ECON",
   color: "#2f8f46",
   units: {
     basic: "Basics 基本概念",
@@ -161,7 +161,7 @@
   id: "hug",
   name: "AP Human Geography",
   zh: "AP 人文地理",
-  icon: "🗺️",
+  icon: "HUG",
   color: "#5b8c2a",
   units: {
     pop: "Population & Migration 人口与迁移",

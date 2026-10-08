@@ -5,28 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VocAP · AP 学术词汇桥</title>
   <meta name="description" content="Bilingual AP vocabulary for students moving from Chinese public schools to international programs. 把你已经掌握的知识，翻译成 AP 的英文表达。">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌉</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231e1e1e'/><text x='50' y='68' font-family='Arial' font-weight='700' font-size='52' fill='%23fedb00' text-anchor='middle'>V</text></svg>">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="#/">
-        <span class="brand-mark">Voc<b>AP</b></span>
-        <span class="brand-sub">学术词汇桥</span>
-      </a>
-      <nav class="nav" aria-label="Main">
+  <header class="site-header">
+    <div class="utility">
+      <div class="wrap utility-inner">
+        <a class="brand" href="#/">
+          <span class="brand-mark">Voc<b>AP</b></span>
+          <span class="brand-sub">学术词汇桥<span class="brand-en"> · AP Vocabulary Bridge</span></span>
+        </a>
+        <form class="search" id="search-form" role="search">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="search-input" type="search" placeholder="搜英文或中文，如 导数 / mitosis" aria-label="Search words" autocomplete="off">
+        </form>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Main">
+      <div class="wrap nav-inner">
         <a href="#/" data-nav="home">首页<small>Home</small></a>
         <a href="#/zhan" data-nav="zhan">斩词<small>Daily</small></a>
-        <a href="#/study" data-nav="study">闪卡<small>Study</small></a>
+        <a href="#/study" data-nav="study">闪卡<small>Flashcards</small></a>
         <a href="#/quiz" data-nav="quiz">测验<small>Quiz</small></a>
         <a href="#/roots" data-nav="roots">词根<small>Roots</small></a>
         <a href="#/notebook" data-nav="notebook">生词本<small>Notebook</small></a>
-      </nav>
-      <form class="search" id="search-form" role="search">
-        <input id="search-input" type="search" placeholder="搜英文或中文，如 导数 / mitosis" aria-label="Search words" autocomplete="off">
-      </form>
-    </div>
+      </div>
+    </nav>
   </header>
 
   <main id="app" tabindex="-1"></main>
@@ -36,7 +41,13 @@
   </dialog>
 
   <footer class="footer">
-    <p>VocAP · 为从公立学校转入国际部的同学设计 · 学习进度只保存在你自己的浏览器中</p>
+    <div class="wrap footer-inner">
+      <div>
+        <span class="brand-mark">Voc<b>AP</b></span>
+        <p>为从公立学校转入国际部的同学设计。学习进度只保存在你自己的浏览器中。<br>Built for students moving from Chinese public schools into AP programs. Your progress stays in your own browser.</p>
+      </div>
+      <p class="legal">VocAP is an independent study tool and is not affiliated with or endorsed by College Board. AP® is a trademark registered by College Board.</p>
+    </div>
   </footer>
 
   <!-- Word bank: one file per subject group. Add new files here. -->

@@ -3,7 +3,7 @@
   id: "eng",
   name: "AP English Lang & Lit",
   zh: "AP 英语语言/文学",
-  icon: "📖",
+  icon: "ENG",
   color: "#7a5230",
   units: {
     rhet: "Rhetoric 修辞论证",
@@ -91,7 +91,7 @@
   id: "exam",
   name: "AP Exam Command Words",
   zh: "AP 考试指令词（全科通用）",
-  icon: "📝",
+  icon: "EXAM",
   color: "#e0a100",
   featured: true,
   units: {

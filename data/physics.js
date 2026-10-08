@@ -3,7 +3,7 @@
   id: "phys",
   name: "AP Physics",
   zh: "AP 物理",
-  icon: "🪐",
+  icon: "PHYS",
   color: "#3a6fd8",
   units: {
     kin: "Kinematics 运动学",

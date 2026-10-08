@@ -3,7 +3,7 @@
   id: "apes",
   name: "AP Environmental Science",
   zh: "AP 环境科学",
-  icon: "🌱",
+  icon: "ES",
   color: "#3f9b6f",
   units: {
     eco: "Ecosystems 生态系统",
@@ -78,7 +78,7 @@
   id: "cs",
   name: "AP Computer Science",
   zh: "AP 计算机科学",
-  icon: "💻",
+  icon: "CS",
   color: "#4b5bd6",
   units: {
     basic: "Basics 基础",

@@ -3,7 +3,7 @@
   id: "psych",
   name: "AP Psychology",
   zh: "AP 心理学",
-  icon: "🧠",
+  icon: "PSYC",
   color: "#c2417a",
   units: {
     bio: "Biological Bases 生物基础",

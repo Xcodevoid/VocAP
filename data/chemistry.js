@@ -3,7 +3,7 @@
   id: "chem",
   name: "AP Chemistry",
   zh: "AP 化学",
-  icon: "⚗️",
+  icon: "CHEM",
   color: "#d9622b",
   units: {
     atom: "Atoms & Bonding 原子与化学键",
