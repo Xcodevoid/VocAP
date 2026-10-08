@@ -1,0 +1,10 @@
+{
+  "name": "vocap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bilingual (中文/English) AP vocabulary trainer for students moving from Chinese public schools to international programs.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8000"
+  }
+}
