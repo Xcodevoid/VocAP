@@ -189,3 +189,71 @@ test("normalizeState tolerates missing or corrupt saved data", () => {
   assert.deepStrictEqual(s.cards, { a: { box: 1 } });
   assert.deepStrictEqual(s.starred, {});
 });
+
+test("daily plan: reviews first, then new words, fixed for the day", () => {
+  const s = core.emptyState();
+  s.plan = { pool: "s:phys", daily: 5 };
+  const t0 = new Date(2026, 9, 8, 9).getTime();
+  const phys = core.resolvePool(index, s, "s:phys", t0);
+  core.review(s, phys[0].id, "good", t0 - 2 * core.DAY);
+  const day = core.startDay(index, s, t0);
+  assert.strictEqual(day.ids[0], phys[0].id, "due review comes first");
+  assert.strictEqual(day.ids.length, 6);
+  assert.ok(day.ids.every((id) => id.startsWith("phys:")));
+  const again = core.startDay(index, s, t0 + 3600e3);
+  assert.deepStrictEqual(again.ids, day.ids, "same list later the same day");
+  assert.notDeepStrictEqual(core.startDay(index, s, t0 + core.DAY).ids, day.ids, "new list tomorrow");
+});
+
+test("zhan: wrong answer goes to the mistake notebook and the word stays until answered right", () => {
+  const s = core.emptyState();
+  s.plan = { pool: "s:bio", daily: 2 };
+  const t = new Date(2026, 9, 8, 9).getTime();
+  const [a, b] = core.startDay(index, s, t).ids;
+  core.zhanAnswer(s, a, false, false, t);
+  assert.strictEqual(s.mistakes[a], 1);
+  assert.strictEqual(s.cards[a].box, 0);
+  assert.deepStrictEqual(core.remainingToday(s), [a, b]);
+  core.zhanAnswer(s, a, true, true, t);
+  assert.strictEqual(s.cards[a].box, 0, "a retry in the same session does not promote the word");
+  assert.strictEqual(s.mistakes[a], 1, "...and does not clear it from the mistake notebook");
+  assert.deepStrictEqual(core.remainingToday(s), [b]);
+  assert.ok(!s.checkins[core.dayKey(t)]);
+  core.zhanAnswer(s, b, true, false, t);
+  assert.strictEqual(s.cards[b].box, 1);
+  assert.ok(s.checkins[core.dayKey(t)], "finishing the task checks in");
+  assert.strictEqual(core.checkinStreak(s, t), 1);
+});
+
+test("slay removes a word from all future reviews and the mistake notebook", () => {
+  const s = core.emptyState();
+  const t = 1e12;
+  const w = index.bySubject.chem[0];
+  core.review(s, w.id, "again", t);
+  s.mistakes[w.id] = 2;
+  core.slay(s, w.id, t);
+  assert.strictEqual(core.status(s, w.id), "mastered");
+  assert.ok(!core.isDue(s, w.id, t + 100 * core.DAY));
+  assert.ok(!(w.id in s.mistakes));
+  assert.ok(!core.studyQueue(index.bySubject.chem, s, t, 1000).some((x) => x.id === w.id));
+  assert.deepStrictEqual(core.resolvePool(index, s, "slain", t).map((x) => x.id), [w.id]);
+  core.unslay(s, w.id);
+  assert.ok(core.isDue(s, w.id, t + core.DAY));
+});
+
+test("check-in streak counts consecutive finished days", () => {
+  const s = core.emptyState();
+  const t = new Date(2026, 9, 8, 12).getTime();
+  for (const d of [1, 2, 3, 5]) s.checkins[core.dayKey(t - d * core.DAY)] = true;
+  assert.strictEqual(core.checkinStreak(s, t), 3, "today not done yet still shows yesterday's streak");
+  s.checkins[core.dayKey(t)] = true;
+  assert.strictEqual(core.checkinStreak(s, t), 4);
+  assert.strictEqual(core.checkinStreak(s, t + 2 * core.DAY), 0);
+});
+
+test("old saved progress without the new fields still loads", () => {
+  const s = core.normalizeState({ version: 1, cards: {}, starred: {}, mistakes: {}, streak: { last: null, count: 0 }, daily: {} });
+  assert.deepStrictEqual(s.slain, {});
+  assert.deepStrictEqual(s.today, { day: null, ids: [], done: [] });
+  assert.strictEqual(s.plan.daily, 20);
+});

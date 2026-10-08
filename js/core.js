@@ -95,7 +95,13 @@
   // ---------- progress state ----------
 
   function emptyState() {
-    return { version: 1, cards: {}, starred: {}, mistakes: {}, streak: { last: null, count: 0 }, daily: {} };
+    return {
+      version: 1, cards: {}, starred: {}, mistakes: {}, streak: { last: null, count: 0 }, daily: {},
+      slain: {},                          // id -> time the word was 斩'd (known, never shown again)
+      checkins: {},                       // dayKey -> true when the daily plan was finished
+      plan: { pool: "", daily: 20 },      // chosen word book + new words per day
+      today: { day: null, ids: [], done: [] }
+    };
   }
 
   function normalizeState(s) {
@@ -151,6 +157,7 @@
   }
 
   function status(state, id) {
+    if (state.slain[id]) return "mastered";
     const c = state.cards[id];
     if (!c) return "new";
     return c.box >= MASTERED_BOX ? "mastered" : "learning";
@@ -158,7 +165,7 @@
 
   function isDue(state, id, now) {
     const c = state.cards[id];
-    return !!c && c.due <= now;
+    return !!c && !state.slain[id] && c.due <= now;
   }
 
   function recordQuizAnswer(state, id, correct, now) {
@@ -173,9 +180,77 @@
     touchStreak(state, now);
   }
 
+  // ---------- 斩词 daily plan ----------
+
+  const DAILY_REVIEW_CAP = 60;
+
+  /**
+   * Today's task: due reviews first, then `plan.daily` new words from the plan's pool.
+   * The list is fixed for the day (stored in state.today) so reloading doesn't reshuffle it.
+   */
+  function startDay(index, state, now, rand) {
+    const today = dayKey(now);
+    if (state.today.day === today) return state.today;
+    const pool = resolvePool(index, state, state.plan.pool || "all", now);
+    const due = pool.filter(function (w) { return isDue(state, w.id, now); })
+      .sort(function (a, b) { return state.cards[a.id].due - state.cards[b.id].due; })
+      .slice(0, DAILY_REVIEW_CAP);
+    const fresh = studyQueue(pool, state, now, state.plan.daily, rand).filter(function (w) { return !state.cards[w.id]; });
+    state.today = { day: today, ids: due.concat(fresh).map(function (w) { return w.id; }), done: [] };
+    return state.today;
+  }
+
+  /** Ids from today's task that still need a correct answer (or a 斩). */
+  function remainingToday(state) {
+    return state.today.ids.filter(function (id) { return state.today.done.indexOf(id) === -1; });
+  }
+
+  function finishIfComplete(state, now) {
+    if (state.today.ids.length && !remainingToday(state).length) state.checkins[dayKey(now)] = true;
+  }
+
+  /**
+   * One answer in a 斩词 session. A wrong answer sends the word to the mistake notebook
+   * and resets its review box; the word stays in today's task until answered correctly.
+   * `retry` is true when re-asking a word already missed this session.
+   */
+  function zhanAnswer(state, id, correct, retry, now) {
+    if (correct) {
+      if (!retry) review(state, id, "good", now);
+      if (state.today.done.indexOf(id) === -1) state.today.done.push(id);
+      finishIfComplete(state, now);
+    } else {
+      review(state, id, "again", now);
+    }
+    // Getting a word right moments after missing it doesn't prove you know it,
+    // so a same-session retry leaves it in the mistake notebook.
+    if (!(correct && retry)) recordQuizAnswer(state, id, correct, now);
+  }
+
+  /** 斩: "I already know this word" — never schedule it again. */
+  function slay(state, id, now) {
+    state.slain[id] = now;
+    delete state.mistakes[id];
+    if (state.today.ids.indexOf(id) !== -1 && state.today.done.indexOf(id) === -1) state.today.done.push(id);
+    finishIfComplete(state, now);
+    touchStreak(state, now);
+  }
+
+  function unslay(state, id) {
+    delete state.slain[id];
+  }
+
+  /** Number of consecutive check-in days ending today (or yesterday, if today isn't done yet). */
+  function checkinStreak(state, now) {
+    let t = state.checkins[dayKey(now)] ? now : now - DAY;
+    let n = 0;
+    while (state.checkins[dayKey(t)]) { n++; t -= DAY; }
+    return n;
+  }
+
   /**
    * Pool spec strings:
-   *   all | due | starred | mistakes | s:<subject> | s:<subject>:<unit>
+   *   all | due | starred | mistakes | slain | s:<subject> | s:<subject>:<unit>
    */
   function resolvePool(index, state, spec, now) {
     spec = spec || "all";
@@ -183,6 +258,7 @@
     if (spec === "due") return index.words.filter(function (w) { return isDue(state, w.id, now); });
     if (spec === "starred") return index.words.filter(function (w) { return state.starred[w.id]; });
     if (spec === "mistakes") return index.words.filter(function (w) { return state.mistakes[w.id]; });
+    if (spec === "slain") return index.words.filter(function (w) { return state.slain[w.id]; });
     const m = /^s:([^:]+)(?::(.+))?$/.exec(spec);
     if (m && index.bySubject[m[1]]) {
       return index.bySubject[m[1]].filter(function (w) { return !m[2] || w.u === m[2]; });
@@ -204,7 +280,7 @@
   function studyQueue(pool, state, now, newLimit, rand) {
     const due = pool.filter(function (w) { return isDue(state, w.id, now); });
     due.sort(function (a, b) { return state.cards[a.id].due - state.cards[b.id].due; });
-    const fresh = shuffle(pool.filter(function (w) { return !state.cards[w.id]; }), rand).slice(0, newLimit);
+    const fresh = shuffle(pool.filter(function (w) { return !state.cards[w.id] && !state.slain[w.id]; }), rand).slice(0, newLimit);
     return due.concat(fresh);
   }
 
@@ -243,31 +319,34 @@
    */
   function buildQuiz(pool, allWords, mode, count, rand) {
     rand = rand || Math.random;
-    const picked = shuffle(pool, rand).slice(0, count);
-    const sameSubject = function (w) {
-      return pool.filter(function (x) { return x.subject === w.subject; });
-    };
-    return picked.map(function (w) {
-      let m = mode === "mixed" ? QUIZ_MODES[Math.floor(rand() * QUIZ_MODES.length)] : mode;
-      let prompt = null;
-      if (m === "cloze") {
-        prompt = cloze(w);
-        if (!prompt) m = "def2en";
-      }
-      if (m === "spell") {
-        return { word: w, mode: m, prompt: w.zh, hint: w.d, answer: w.t };
-      }
-      const key = m === "en2zh" ? "zh" : "t";
-      const distract = pickDistractors(w, sameSubject(w), allWords, 3, key, rand);
-      const options = shuffle([w].concat(distract), rand);
-      return {
-        word: w,
-        mode: m,
-        prompt: m === "en2zh" ? w.t : m === "zh2en" ? w.zh : m === "def2en" ? w.d : prompt,
-        options: options.map(function (o) { return { id: o.id, label: o[key] }; }),
-        answer: w.id
-      };
+    return shuffle(pool, rand).slice(0, count).map(function (w) {
+      const m = mode === "mixed" ? QUIZ_MODES[Math.floor(rand() * QUIZ_MODES.length)] : mode;
+      return question(w, pool, allWords, m, rand);
     });
+  }
+
+  /** One question about `w`; distractors come from the same subject in `pool` first. */
+  function question(w, pool, allWords, m, rand) {
+    rand = rand || Math.random;
+    let prompt = null;
+    if (m === "cloze") {
+      prompt = cloze(w);
+      if (!prompt) m = "def2en";
+    }
+    if (m === "spell") {
+      return { word: w, mode: m, prompt: w.zh, hint: w.d, answer: w.t };
+    }
+    const key = m === "en2zh" ? "zh" : "t";
+    const same = pool.filter(function (x) { return x.subject === w.subject; });
+    const distract = pickDistractors(w, same, allWords, 3, key, rand);
+    const options = shuffle([w].concat(distract), rand);
+    return {
+      word: w,
+      mode: m,
+      prompt: m === "en2zh" ? w.t : m === "zh2en" ? w.zh : m === "def2en" ? w.d : prompt,
+      options: options.map(function (o) { return { id: o.id, label: o[key] }; }),
+      answer: w.id
+    };
   }
 
   function checkSpelling(input, term) {
@@ -297,7 +376,14 @@
     studyQueue: studyQueue,
     cloze: cloze,
     buildQuiz: buildQuiz,
-    checkSpelling: checkSpelling
+    question: question,
+    checkSpelling: checkSpelling,
+    startDay: startDay,
+    remainingToday: remainingToday,
+    zhanAnswer: zhanAnswer,
+    slay: slay,
+    unslay: unslay,
+    checkinStreak: checkinStreak
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;

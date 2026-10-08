@@ -29,7 +29,7 @@
   }
 
   let state = C.normalizeState(readJSON(STORE_KEY));
-  const prefs = Object.assign({ hideZh: false, reverse: false }, readJSON(PREFS_KEY) || {});
+  const prefs = Object.assign({ hideZh: false, reverse: false, autoSpeak: true }, readJSON(PREFS_KEY) || {});
 
   function save() { writeJSON(STORE_KEY, state); }
   function savePrefs() { writeJSON(PREFS_KEY, prefs); }
@@ -49,6 +49,12 @@
   }
 
   function now() { return Date.now(); }
+
+  /** Navigate, re-rendering even when the hash is already the target. */
+  function go(hash) {
+    if (location.hash === hash) route();
+    else location.hash = hash;
+  }
 
   function parseHash() {
     const raw = location.hash.replace(/^#\/?/, "");
@@ -107,6 +113,7 @@
         '<span class="pos">' + esc(w.p) + "</span>" +
         speakBtn(w.t) +
         '<span class="spacer"></span>' +
+        (state.mistakes[w.id] ? '<span class="badge badge-wrong" title="答错次数 Times missed">✗' + state.mistakes[w.id] + "</span>" : "") +
         statusBadge(w.id) + starBtn(w.id) +
       "</div>" +
       '<p class="zh' + (hide ? " concealed" : "") + '"' + (hide ? ' tabindex="0" role="button" title="点击显示中文"' : "") + ">" + esc(w.zh) + "</p>" +
@@ -141,6 +148,7 @@
     if (spec === "due") return "今日复习 Due today";
     if (spec === "starred") return "生词本 Starred";
     if (spec === "mistakes") return "错题本 Mistakes";
+    if (spec === "slain") return "已斩 Slain";
     const m = /^s:([^:]+)(?::(.+))?$/.exec(spec || "");
     if (m && subjectById[m[1]]) {
       const s = subjectById[m[1]];
@@ -201,7 +209,8 @@
           '<div class="stat"><b>' + streak + '🔥</b><span>连续天数<br>Day streak</span></div>' +
         "</div>" +
         '<div class="actions">' +
-          (due ? '<a class="btn primary" href="#/study?pool=due">复习 ' + due + ' 个到期单词 Review due</a>' : '<a class="btn primary" href="#/study">开始学习 Start studying</a>') +
+          '<a class="btn primary" href="#/zhan">⚔️ 每日斩词 Daily words' + (state.checkins[C.dayKey(t)] ? " ✓" : "") + "</a>" +
+          (due ? '<a class="btn" href="#/study?pool=due">复习 ' + due + ' 个到期单词 Review due</a>' : '<a class="btn" href="#/study">闪卡 Flashcards</a>') +
           '<a class="btn" href="#/quiz">小测一下 Take a quiz</a>' +
         "</div>" +
       "</section>" +
@@ -213,7 +222,7 @@
         '<div class="how-grid">' +
           '<div><b>① 搭桥 Bridge</b><p>用中文搜索你熟悉的概念（如「导数」「有丝分裂」），立刻找到 AP 用的英文术语和例句。</p></div>' +
           '<div><b>② 拆解 Decode</b><p>学习希腊/拉丁词根：photo-（光）+ synthesis（合成）。遇到生词也能猜出意思。</p></div>' +
-          '<div><b>③ 记牢 Remember</b><p>间隔重复闪卡会在你快忘的时候提醒你复习；测验错题自动进入错题本。</p></div>' +
+          '<div><b>③ 记牢 Remember</b><p>每日斩词：先复习、再学新词，认识的直接「斩」掉；答错的词自动进入错题本，直到你答对为止。</p></div>' +
         "</div>" +
       "</section>",
       "home"
@@ -403,6 +412,7 @@
     if (!session || !session.flipped) return;
     const w = session.queue.shift();
     C.review(state, w.id, g, now());
+    C.recordQuizAnswer(state, w.id, g !== "again", now());
     save();
     session.done++;
     if (g === "again") {
@@ -542,6 +552,253 @@
     );
   }
 
+  // ----- 斩词 daily mode (inspired by 百词斩) -----
+
+  let zhan = null;
+  const DAILY_OPTIONS = [10, 20, 30, 50];
+
+  function planPoolLabel() {
+    return poolLabel(state.plan.pool || "all");
+  }
+
+  function calendar(t) {
+    // Last 5 weeks, Monday-first, ending with the current week.
+    const today = new Date(t);
+    const offset = (today.getDay() + 6) % 7;
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset - 28);
+    let cells = "";
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const key = C.dayKey(d.getTime());
+      const future = d.getTime() > t;
+      const cls = state.checkins[key] ? "cal-day done" : state.daily[key] ? "cal-day active" : "cal-day";
+      cells += '<span class="' + cls + (key === C.dayKey(t) ? " today" : "") + (future ? " future" : "") + '" title="' + key + '">' +
+        (state.checkins[key] ? "✓" : d.getDate()) + "</span>";
+    }
+    return '<div class="calendar"><div class="cal-head">' + ["一", "二", "三", "四", "五", "六", "日"].map(function (x) { return "<span>" + x + "</span>"; }).join("") +
+      '</div><div class="cal-grid">' + cells + "</div></div>";
+  }
+
+  function viewZhan(params) {
+    if (!state.plan.pool || params.get("setup")) return viewZhanSetup();
+    const t = now();
+    C.startDay(index, state, t);
+    save();
+    if (params.get("go")) return startZhan();
+    zhan = null;
+    const total = state.today.ids.length;
+    const left = C.remainingToday(state).length;
+    const doneToday = !!state.checkins[C.dayKey(t)];
+    const p = progressFor(C.resolvePool(index, state, state.plan.pool, t));
+    render(
+      '<section class="zhan-dash">' +
+        '<div class="zhan-head"><div><h1 class="page-title">⚔️ 每日斩词 Daily Words</h1>' +
+          '<p class="muted">词书 ' + esc(planPoolLabel()) + " · 每天 " + state.plan.daily + ' 个新词 · <a href="#/zhan?setup=1">更换计划 Change plan</a></p></div></div>' +
+        '<div class="today-box">' +
+          '<div class="today-num"><b>' + (total - left) + "</b> / " + total + '<span>今日任务 Today</span></div>' +
+          '<div class="progress"><span class="p-mastered" style="width:' + (total ? 100 * (total - left) / total : 0) + '%"></span></div>' +
+          (doneToday
+            ? '<p class="checked">✅ 今日已打卡 Checked in today!</p><div class="actions"><button class="btn primary" id="zhan-more">加餐：再学 10 个 Learn 10 more</button><a class="btn" href="#/quiz?pool=mistakes">错词本测验 Quiz mistakes</a></div>'
+            : total
+              ? '<div class="actions"><a class="btn primary big" href="#/zhan?go=1">' + (left < total ? "继续斩词 Continue" : "开始斩词 Start") + " · 剩 " + left + "</a></div>"
+              : '<p class="muted">这本词书已经全部学完或斩掉了！换一本吧。All words in this book are learned — choose another.</p>') +
+        "</div>" +
+        '<div class="stats">' +
+          '<div class="stat"><b>' + C.checkinStreak(state, t) + '🔥</b><span>连续打卡<br>Check-in streak</span></div>' +
+          '<div class="stat"><b>' + Object.keys(state.slain).length + '</b><span>已斩<br>Slain</span></div>' +
+          '<div class="stat"><b>' + Object.keys(state.mistakes).length + '</b><span>错词本<br>Mistakes</span></div>' +
+          '<div class="stat"><b>' + p.mastered + "/" + p.total + '</b><span>本书掌握<br>Book mastered</span></div>' +
+        "</div>" +
+        '<h2 class="section-title">打卡日历 Check-in calendar</h2>' + calendar(t) +
+        '<p class="muted small">玩法：看英文单词选中文意思。认识的词点「斩」，以后不再出现；答错的词进入错词本，本轮稍后会用「中→英」再考一次，直到答对。<br>' +
+        "How it works: pick the Chinese meaning. Already know a word? Slay it ⚔️ and it never comes back. Miss one and it goes to your mistake notebook and returns later this session until you get it right.</p>" +
+      "</section>",
+      "zhan"
+    );
+    const more = document.getElementById("zhan-more");
+    if (more) more.addEventListener("click", function () {
+      const pool = C.resolvePool(index, state, state.plan.pool, now());
+      const extra = C.studyQueue(pool, state, now(), 10).filter(function (w) {
+        return !state.cards[w.id] && state.today.ids.indexOf(w.id) === -1;
+      });
+      if (!extra.length) { alert("这本词书没有新词了。No new words left in this book."); return; }
+      extra.forEach(function (w) { state.today.ids.push(w.id); });
+      save();
+      go("#/zhan?go=1");
+    });
+  }
+
+  function viewZhanSetup() {
+    const t = now();
+    const current = state.plan.pool || "all";
+    const books = [{ spec: "all", icon: "🎲", name: "全部科目", sub: "All subjects" }].concat(subjects.map(function (s) {
+      return { spec: "s:" + s.id, icon: s.icon, name: s.zh, sub: s.name, color: s.color };
+    }));
+    render(
+      '<h1 class="page-title">选择词书 Choose your word book</h1>' +
+      '<p class="muted">每天先复习到期的旧词，再学习新词。Each day: due reviews first, then new words.</p>' +
+      '<form id="plan-form">' +
+        '<div class="pool-grid">' + books.map(function (b) {
+          const ws = C.resolvePool(index, state, b.spec, t);
+          const fresh = ws.filter(function (w) { return !state.cards[w.id] && !state.slain[w.id]; }).length;
+          return '<label class="pool pick" style="--c:' + (b.color || "var(--accent)") + '">' +
+            '<input type="radio" name="book" value="' + b.spec + '"' + (b.spec === current ? " checked" : "") + ">" +
+            '<span class="pool-icon">' + esc(b.icon) + "</span><b>" + esc(b.name) + "</b><span>" + esc(b.sub) + " · " + fresh + " 新词</span></label>";
+        }).join("") + "</div>" +
+        '<h2 class="section-title">每天学几个新词？New words per day</h2>' +
+        '<div class="chips">' + DAILY_OPTIONS.map(function (n) {
+          return '<label class="chip radio"><input type="radio" name="daily" value="' + n + '"' + (n === state.plan.daily ? " checked" : "") + "> " + n + "</label>";
+        }).join("") + "</div>" +
+        '<div class="actions" style="margin-top:20px"><button class="btn primary">保存并开始 Save & start</button></div>' +
+      "</form>",
+      "zhan"
+    );
+    document.getElementById("plan-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const pool = f.get("book") || "all";
+      const daily = +f.get("daily") || 20;
+      const changed = pool !== state.plan.pool || daily !== state.plan.daily;
+      state.plan = { pool: pool, daily: daily };
+      if (changed && !state.checkins[C.dayKey(now())]) state.today = { day: null, ids: [], done: [] };
+      save();
+      go("#/zhan");
+    });
+  }
+
+  function startZhan() {
+    zhan = { queue: C.remainingToday(state), retried: {}, q: null, answered: null, undo: null, hint: false, right: 0, wrong: 0, slain: 0 };
+    nextZhan();
+  }
+
+  function nextZhan() {
+    zhan.answered = null;
+    zhan.hint = false;
+    const id = zhan.queue[0];
+    if (!id) return renderZhanDone();
+    const w = index.byId[id];
+    // First time: English -> 中文. A retry after a mistake flips it to 中文 -> English.
+    zhan.q = C.question(w, index.bySubject[w.subject], index.words, zhan.retried[id] ? "zh2en" : "en2zh");
+    renderZhan();
+    if (prefs.autoSpeak && zhan.q.mode === "en2zh") speak(w.t);
+  }
+
+  function renderZhan() {
+    const q = zhan.q;
+    const w = q.word;
+    const a = zhan.answered;
+    const total = state.today.ids.length;
+    const done = total - C.remainingToday(state).length;
+    const undo = zhan.undo
+      ? '<div class="toast">⚔️ 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "";
+    const prompt = q.mode === "en2zh"
+      ? '<p class="card-term">' + esc(w.t) + ' <span class="pos">' + esc(w.p) + "</span></p>" + speakBtn(w.t)
+      : '<p class="muted small">再考一次：选出英文 Try again — pick the English</p><p class="card-zh">' + esc(w.zh) + "</p>";
+    const hint = q.mode === "en2zh"
+      ? (zhan.hint || a ? '<p class="ex">“' + highlight(w.ex, w.t) + "”</p>" : '<button class="btn small ghost" id="zhan-hint">💡 看例句提示 Show example (H)</button>')
+      : "";
+    const options = '<div class="options">' + q.options.map(function (o, i) {
+      let cls = "option";
+      if (a) {
+        if (o.id === q.answer) cls += " correct";
+        else if (o.id === a.choice) cls += " wrong";
+      }
+      return '<button class="' + cls + '" data-zchoice="' + esc(o.id) + '"' + (a ? " disabled" : "") + "><kbd>" + (i + 1) + "</kbd> " + esc(o.label) + "</button>";
+    }).join("") + "</div>";
+    const feedback = a
+      ? '<div class="feedback ' + (a.correct ? "ok" : "bad") + '">' +
+          (a.correct ? "✓ 正确 Correct!" : "✗ 答错了，已加入错词本，稍后再考一次。Added to your mistakes — it will come back.") +
+          '<div class="feedback-word">' + wordCard(w, { showZh: true }) + "</div>" +
+          '<button class="btn primary wide" id="zhan-next">下一个 Next →</button></div>'
+      : "";
+    render(
+      '<div class="study-top"><a class="muted" href="#/zhan">← 每日斩词</a>' +
+        '<label class="toggle"><input type="checkbox" id="auto-speak"' + (prefs.autoSpeak ? " checked" : "") + "> 自动发音 Auto-speak</label>" +
+        '<span class="muted">' + done + " / " + total + "</span></div>" +
+      '<div class="progress thin"><span class="p-mastered" style="width:' + (total ? 100 * done / total : 0) + '%"></span></div>' +
+      undo +
+      '<section class="question zhan">' +
+        '<div class="zhan-card">' +
+          (a ? "" : '<button class="slay" id="zhan-slay" title="我认识，以后不再出现 I know this — never show again">⚔️ 斩<small>S</small></button>') +
+          prompt + hint +
+        "</div>" +
+        options + feedback +
+      "</section>",
+      "zhan"
+    );
+    document.getElementById("auto-speak").addEventListener("change", function (e) {
+      prefs.autoSpeak = e.target.checked;
+      savePrefs();
+    });
+    const next = document.getElementById("zhan-next");
+    if (next) next.focus();
+  }
+
+  function zhanChoose(choice) {
+    if (!zhan || zhan.answered) return;
+    const q = zhan.q;
+    const id = q.word.id;
+    const correct = choice === q.answer;
+    const retry = !!zhan.retried[id];
+    C.zhanAnswer(state, id, correct, retry, now());
+    save();
+    zhan.queue.shift();
+    zhan.undo = null;
+    if (correct) {
+      zhan.right++;
+    } else {
+      zhan.wrong++;
+      zhan.retried[id] = true;
+      zhan.queue.splice(Math.min(4, zhan.queue.length), 0, id);
+    }
+    zhan.answered = { choice: choice, correct: correct };
+    renderZhan();
+    if (!correct && prefs.autoSpeak) speak(q.word.t);
+  }
+
+  function zhanSlay() {
+    if (!zhan || zhan.answered || !zhan.q) return;
+    const id = zhan.q.word.id;
+    C.slay(state, id, now());
+    save();
+    zhan.queue = zhan.queue.filter(function (x) { return x !== id; });
+    zhan.undo = id;
+    zhan.slain++;
+    nextZhan();
+  }
+
+  function zhanUndo() {
+    const id = zhan && zhan.undo;
+    if (!id) return;
+    C.unslay(state, id);
+    state.today.done = state.today.done.filter(function (x) { return x !== id; });
+    if (C.remainingToday(state).length) delete state.checkins[C.dayKey(now())];
+    save();
+    zhan.undo = null;
+    zhan.slain--;
+    zhan.queue.unshift(id);
+    nextZhan();
+  }
+
+  function renderZhanDone() {
+    const t = now();
+    const finished = !!state.checkins[C.dayKey(t)];
+    render(
+      '<section class="done">' +
+        (zhan.undo ? '<div class="toast">⚔️ 已斩 <b>' + esc(index.byId[zhan.undo].t) + '</b> <button class="link-btn" id="zhan-undo">撤销 Undo</button></div>' : "") +
+        (finished ? "<h1>🎉 今日打卡成功！</h1><p>Checked in · 连续 <b>" + C.checkinStreak(state, t) + "</b> 天 day streak 🔥</p>"
+          : "<h1>本轮完成 Round complete</h1>") +
+        '<p class="muted">答对 ' + zhan.right + " · 答错 " + zhan.wrong + " · 斩 " + zhan.slain + "</p>" +
+        calendar(t) +
+        '<div class="actions center">' +
+          '<a class="btn primary" href="#/zhan">返回 Back</a>' +
+          (Object.keys(state.mistakes).length ? '<a class="btn" href="#/quiz?pool=mistakes">错词本测验 Quiz mistakes</a>' : "") +
+        "</div>" +
+      "</section>",
+      "zhan"
+    );
+  }
+
   // ----- roots -----
 
   function viewRoots(params) {
@@ -584,6 +841,7 @@
     const mistakes = C.resolvePool(index, state, "mistakes", t).sort(function (a, b) {
       return state.mistakes[b.id] - state.mistakes[a.id];
     });
+    const slain = C.resolvePool(index, state, "slain", t).sort(function (a, b) { return state.slain[b.id] - state.slain[a.id]; });
     const section = function (title, list, spec, emptyMsg) {
       return '<section class="nb-section"><div class="nb-head"><h2 class="section-title">' + title + ' <span class="muted">' + list.length + "</span></h2>" +
         (list.length ? '<div class="actions"><a class="btn small" href="#/study?pool=' + spec + '">闪卡 Study</a><a class="btn small" href="#/quiz?pool=' + spec + '">测验 Quiz</a></div>' : "") +
@@ -594,7 +852,14 @@
     render(
       '<h1 class="page-title">我的生词本 My Notebook</h1>' +
       section("★ 收藏 Starred", starred, "starred", "点击单词旁的 ☆ 收藏难词。Tap ☆ next to any word to save it here.") +
-      section("✗ 错题本 Mistakes", mistakes, "mistakes", "测验中答错的词会出现在这里，答对后自动移除。Words you miss in quizzes appear here.") +
+      section("✗ 错题本 Mistakes", mistakes, "mistakes", "斩词、测验答错或闪卡选「再来」的词会出现在这里，答对后自动移除。Words you miss appear here and leave once you get them right.") +
+      '<section class="nb-section"><h2 class="section-title">⚔️ 已斩 Slain <span class="muted">' + slain.length + "</span></h2>" +
+        (slain.length ? '<p class="muted small">这些词不会再出现在复习中。点 ↩ 恢复。These words are skipped in reviews — tap ↩ to bring one back.</p><div class="chips">' +
+          slain.map(function (w) {
+            return '<span class="chip slain-chip"><button class="link-btn" data-open="' + esc(w.id) + '">' + esc(w.t) + '</button> <button class="link-btn" data-unslay="' + esc(w.id) + '" title="恢复 Restore">↩</button></span>';
+          }).join("") + "</div>"
+          : '<p class="empty">在「每日斩词」里点 ⚔️ 斩 掉已经认识的词。Slay words you already know in Daily Words.</p>') +
+      "</section>" +
       '<section class="nb-section backup"><h2 class="section-title">备份进度 Backup</h2>' +
         '<p class="muted">进度只保存在当前浏览器。换设备前请先导出。Progress is stored only in this browser — export it before switching devices.</p>' +
         '<div class="actions"><button class="btn small" id="export">导出 Export</button>' +
@@ -657,7 +922,7 @@
   // ---------- events ----------
 
   document.addEventListener("click", function (e) {
-    const t = e.target.closest("[data-speak],[data-star],[data-open],[data-close],[data-choice],[data-grade],#flip,#next-q,#flashcard,.zh.concealed");
+    const t = e.target.closest("[data-speak],[data-star],[data-open],[data-close],[data-choice],[data-zchoice],[data-grade],[data-unslay],#flip,#next-q,#flashcard,#zhan-slay,#zhan-hint,#zhan-next,#zhan-undo,.zh.concealed");
     if (!t) {
       if (e.target === dialog) closeWord(); // backdrop click
       return;
@@ -679,6 +944,12 @@
     if (t.hasAttribute("data-close")) { closeWord(); return; }
     if (t.hasAttribute("data-choice")) { answer(t.getAttribute("data-choice")); return; }
     if (t.hasAttribute("data-grade")) { grade(t.getAttribute("data-grade")); return; }
+    if (t.hasAttribute("data-zchoice")) { zhanChoose(t.getAttribute("data-zchoice")); return; }
+    if (t.hasAttribute("data-unslay")) { C.unslay(state, t.getAttribute("data-unslay")); save(); route(); return; }
+    if (t.id === "zhan-slay") { zhanSlay(); return; }
+    if (t.id === "zhan-hint") { zhan.hint = true; renderZhan(); return; }
+    if (t.id === "zhan-next") { nextZhan(); return; }
+    if (t.id === "zhan-undo") { zhanUndo(); return; }
     if (t.id === "next-q") { nextQuestion(); return; }
     if (t.id === "flip" || t.id === "flashcard") { flip(); return; }
     if (t.classList.contains("concealed")) { t.classList.remove("concealed"); }
@@ -705,6 +976,11 @@
       else if (session.flipped && e.key === "1") grade("again");
       else if (session.flipped && e.key === "2") grade("good");
       else if (session.flipped && e.key === "3") grade("easy");
+    } else if (r === "zhan" && zhan && zhan.q && zhan.queue.length + (zhan.answered ? 1 : 0)) {
+      if (zhan.answered && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); nextZhan(); }
+      else if (!zhan.answered && /^[1-4]$/.test(e.key)) zhanChoose(zhan.q.options[+e.key - 1].id);
+      else if (!zhan.answered && (e.key === "s" || e.key === "S")) zhanSlay();
+      else if (!zhan.answered && (e.key === "h" || e.key === "H") && zhan.q.mode === "en2zh") { zhan.hint = true; renderZhan(); }
     } else if (r === "quiz" && quiz && quiz.qs[quiz.i]) {
       const q = quiz.qs[quiz.i];
       if (quiz.answered && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); nextQuestion(); }
@@ -719,6 +995,7 @@
     const h = parseHash();
     const p = h.parts;
     session = p[0] === "study" ? session : null;
+    if (p[0] !== "zhan") zhan = null;
     if (p[0] !== "search") document.getElementById("search-input").value = "";
     switch (p[0]) {
       case undefined: return viewHome();
@@ -726,6 +1003,7 @@
       case "search": return viewSearch(h.params);
       case "study": return viewStudy(h.params);
       case "quiz": return viewQuiz(h.params);
+      case "zhan": return viewZhan(h.params);
       case "roots": return viewRoots(h.params);
       case "notebook": return viewNotebook();
       default: return viewNotFound();

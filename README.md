@@ -18,8 +18,9 @@ words they need for AP exams across every subject.
 | **AP Exam Command Words** | identify / describe / explain / justify, *in terms of*, *respectively*, *negligible*, *the extent to which*… — the words that tell you what the question wants. |
 | **14 subjects, ~380 words** | Biology, Chemistry, Physics, Calculus, Statistics, Psychology, U.S. History, World History, U.S. Government, Economics, Human Geography, Environmental Science, Computer Science, English Lang & Lit. |
 | **Word parts 词根** | Greek/Latin roots, prefixes and suffixes (photo-, therm, -ism…) are matched automatically to every word, so students learn to decode words they have never seen. |
+| **⚔️ 每日斩词 Daily Words** (inspired by 百词斩) | Pick a word book (one subject or all) and a daily goal. Each day: due reviews first, then new words. See the English word (auto-pronounced), pick the 中文 from 4 options, with an optional example-sentence hint. Already know it? **斩** it and it never comes back (undo available). Miss it and it goes into the 错题本 and returns later in the session as 中→英 until you get it right. Finishing the day's task is a **打卡 check-in**, shown on a calendar with a streak. Keyboard: 1–4 answer, S slay, H hint, Enter next. |
 | **Flashcards with spaced repetition** | Leitner-box scheduling (1, 2, 4, 8, 16, 32 days). English-first or Chinese-first. Keyboard: Space to flip, 1/2/3 to grade. |
-| **Quizzes** | 英→中, 中→英, definition → word, fill-in-the-blank from the example sentence, and spelling. Wrong answers go into the 错题本 (mistake notebook) and leave it after you get them right. |
+| **Quizzes** | 英→中, 中→英, definition → word, fill-in-the-blank from the example sentence, and spelling. Wrong answers (from quizzes, 斩词, or flashcard "再来") go into the 错题本 (mistake notebook) and leave it after you get them right in a later session. |
 | **Hide-Chinese self-test** | Blur the Chinese on any word list and tap to reveal. |
 | **Pronunciation** | 🔊 uses the browser's built-in English speech. |
 | **Private by default** | No account, no server. Progress lives in the browser (`localStorage`) and can be exported/imported as JSON from the Notebook page. |
